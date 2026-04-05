@@ -360,7 +360,16 @@ def render_hallucination_tab(report: dict):
     """Render hallucination detection findings."""
     hal_data = report.get("hallucination_report", {})
     total = hal_data.get("total_findings", 0)
+
     st.subheader(f"🧠 Hallucination — {total} Finding(s)")
+
+    # Display fabricated bibliography entries (from Crossref check)
+    fab_bib = hal_data.get("fabricated_bib_entries", [])
+    if fab_bib:
+        st.error(f"📚 **{len(fab_bib)} fabricated bibliography entries detected:**")
+        for entry in fab_bib[:20]:
+            st.code(entry, language="text")
+        st.markdown("---")
 
     if total == 0:
         st.success("✅ No hallucination patterns detected.")
@@ -377,8 +386,12 @@ def render_hallucination_tab(report: dict):
     col4.metric("📚 Fake Citations", len(hal_data.get("fabricated_citations", [])))
 
     if by_type:
-        fig = px.pie(values=list(by_type.values()), names=list(by_type.keys()), title="Hallucination by Type",
-                     color_discrete_map={"Fabrication": "#ff4b4b", "Distortion": "#ff8900", "Contradiction": "#cc44ff"})
+        fig = px.pie(
+            values=list(by_type.values()),
+            names=list(by_type.keys()),
+            title="Hallucination by Type",
+            color_discrete_map={"Fabrication": "#ff4b4b", "Distortion": "#ff8900", "Contradiction": "#cc44ff"}
+        )
         fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={"color": "white"}, height=300)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -388,14 +401,21 @@ def render_hallucination_tab(report: dict):
         st.code(", ".join(fab_cites[:20]), language="text")
 
     st.subheader("📋 Detailed Findings")
-    filter_type = st.multiselect("Filter by Type", ["Fabrication", "Distortion", "Contradiction"],
-                                 default=["Fabrication", "Distortion", "Contradiction"], key="hal_type")
+    filter_type = st.multiselect(
+        "Filter by Type",
+        ["Fabrication", "Distortion", "Contradiction"],
+        default=["Fabrication", "Distortion", "Contradiction"],
+        key="hal_type"
+    )
     findings = hal_data.get("findings", [])
     filtered = [f for f in findings if f["type"] in filter_type]
 
     for i, finding in enumerate(filtered):
         type_emoji = {"Fabrication": "🏭", "Distortion": "📐", "Contradiction": "🔄"}.get(finding["type"], "⚠️")
-        with st.expander(f"{type_emoji} [{finding['type']}] {finding['sub_type']} — Section: {finding['section'][:40]}", expanded=(i < 3)):
+        with st.expander(
+            f"{type_emoji} [{finding['type']}] {finding['sub_type']} — Section: {finding['section'][:40]}",
+            expanded=(i < 3)
+        ):
             cols = st.columns(2)
             cols[0].markdown(f"**Type:** `{finding['type']}`")
             cols[1].markdown(f"**Confidence:** {finding['confidence']:.0%}")
