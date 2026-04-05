@@ -2,6 +2,7 @@
 hallucination_detector/detector.py
 Detects hallucination in LaTeX research papers using LLM-based claim verification
 and optional Crossref API for citation verification.
+Now also verifies every entry in the bibliography (.bib file).
 """
 
 import re
@@ -9,7 +10,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .crossref_client import CrossrefClient  # Ensure crossref_client.py is in the same folder
+from .crossref_client import CrossrefClient
 
 
 @dataclass
@@ -33,10 +34,11 @@ class HallucinationReport:
     verified_claims: list[dict] = field(default_factory=list)
     contradictions: list[dict] = field(default_factory=list)
     fabricated_citations: list[str] = field(default_factory=list)
+    fabricated_bib_entries: list[str] = field(default_factory=list)   # NEW
 
 
 class HallucinationDetector:
-    # Rule patterns
+    # Rule patterns (unchanged)
     IMPOSSIBLE_PERCENT_RE = re.compile(r'(\d+(?:\.\d+)?)\s*%')
     HIGH_ACCURACY_RE = re.compile(
         r'(?:accuracy|precision|recall|f1|auc|score)\s*(?:of\s*)?(\d{2,3}(?:\.\d+)?)\s*%',
@@ -48,8 +50,7 @@ class HallucinationDetector:
         re.IGNORECASE
     )
 
-    # Fixed regex for textual citations: matches patterns like:
-    # "Chen et al. (2024)", "Smith and Jones (2023)", "Wang (2022)"
+    # Fixed regex for textual citations (unchanged)
     TEXTUAL_CITATION_RE = re.compile(
         r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:et\s+al\.|and\s+[A-Z][a-z]+)\s*\((\d{4})\)|'
         r'([A-Z][a-z]+)\s+et\s+al\.\s*\((\d{4})\)|'
@@ -72,7 +73,7 @@ class HallucinationDetector:
     def detect(
         self,
         sections: list,
-        bib_entries: dict,
+        bib_entries: dict,      # {key: fields}
         citations: list,
         resolved_text: str = "",
     ) -> HallucinationReport:
@@ -89,6 +90,7 @@ class HallucinationDetector:
         # Crossref verification (if enabled)
         if self.crossref:
             self._verify_citations_with_crossref(sections, citations, report)
+            self._verify_bib_entries_with_crossref(bib_entries, report)   # NEW
 
         # LLM claim verification
         if self.groq and sections:
@@ -106,7 +108,7 @@ class HallucinationDetector:
         return report
 
     # ------------------------------------------------------------------
-    # Rule‑based checks
+    # Rule‑based checks (unchanged)
     # ------------------------------------------------------------------
     def _check_impossible_numbers(self, section, report):
         text = section.content
@@ -160,7 +162,7 @@ class HallucinationDetector:
                 report.fabricated_citations.append(cit.key)
 
     # ------------------------------------------------------------------
-    # Crossref verification
+    # Crossref verification (existing)
     # ------------------------------------------------------------------
     def _verify_citations_with_crossref(self, sections, citations, report):
         # 1. Check \\cite{} keys that look like DOIs
@@ -183,27 +185,24 @@ class HallucinationDetector:
         for section in sections:
             plain = self._strip_latex(section.content)
             for m in self.TEXTUAL_CITATION_RE.finditer(plain):
-                # Extract author and year using capture groups
                 groups = m.groups()
                 author = None
                 year = None
-                # Try different group patterns
-                if groups[0] and groups[1]:   # "Chen et al. (2024)" or "Smith and Jones (2024)"
+                if groups[0] and groups[1]:
                     author = groups[0].strip()
                     year = groups[1]
-                elif groups[2] and groups[3]: # "Smith et al. (2024)" alternative
+                elif groups[2] and groups[3]:
                     author = groups[2].strip()
                     year = groups[3]
-                elif groups[4] and groups[5] and groups[6]: # "Smith and Jones (2024)"
+                elif groups[4] and groups[5] and groups[6]:
                     author = f"{groups[4]} and {groups[5]}"
                     year = groups[6]
-                elif groups[7] and groups[8]: # "Wang (2022)"
+                elif groups[7] and groups[8]:
                     author = groups[7].strip()
                     year = groups[8]
                 else:
                     continue
 
-                # Extract title snippet (next 5-10 words after the citation)
                 start = m.end()
                 end = min(start + 100, len(plain))
                 title_snippet = plain[start:end].strip().split('.')[0][:80]
@@ -222,6 +221,82 @@ class HallucinationDetector:
                         severity="High" if result["confidence"] < 0.3 else "Medium"
                     ))
                     report.fabricated_citations.append(m.group(0))
+
+    # ------------------------------------------------------------------
+    # NEW: Verify every BibTeX entry against Crossref
+    # ------------------------------------------------------------------
+    def _verify_bib_entries_with_crossref(self, bib_entries: dict, report: HallucinationReport):
+        """
+        For each entry in the bibliography, try to verify it via Crossref.
+        Uses DOI if present, otherwise searches by author, year, title.
+        """
+        for bib_key, fields in bib_entries.items():
+            # Skip the dummy 'unknown' entry if present
+            if bib_key == "unknown":
+                continue
+
+            # 1) If there is a DOI field, verify it directly
+            doi = fields.get("doi") or fields.get("DOI")
+            if doi:
+                result = self.crossref.verify_doi(doi)
+                if result is None:
+                    report.findings.append(HallucinationFinding(
+                        hal_type="Fabrication", sub_type="fake_bibliography_entry",
+                        claim=f"BibTeX key: {bib_key}\nDOI: {doi}",
+                        explanation=f"DOI '{doi}' not found in Crossref",
+                        section="Bibliography",
+                        evidence=f"Entry: {bib_key}\nFields: {fields}",
+                        confidence=0.95,
+                        severity="High"
+                    ))
+                    report.fabricated_bib_entries.append(f"{bib_key} (DOI: {doi})")
+                    continue  # No need to search further
+
+            # 2) No DOI or DOI invalid – search by author, year, title
+            # Extract author (first author's last name)
+            author = None
+            if "author" in fields:
+                # fields["author"] is usually a string like "Smith, John and Jones, Mary"
+                author_str = fields["author"]
+                # Take the first author's last name (before comma)
+                first_author = author_str.split(" and ")[0].split(",")[0].strip()
+                if first_author:
+                    author = first_author
+            elif "editor" in fields:
+                first_editor = fields["editor"].split(" and ")[0].split(",")[0].strip()
+                author = first_editor
+
+            year = fields.get("year")
+            if not year:
+                # Try to extract from date field
+                date = fields.get("date", "")
+                year_match = re.search(r'\b(19|20)\d{2}\b', date)
+                if year_match:
+                    year = year_match.group(0)
+
+            title = fields.get("title", "")
+            # Clean title: remove braces, punctuation at the end
+            title_clean = re.sub(r'[{}]', '', title).strip().rstrip('.?!')
+
+            if not author or not year:
+                # Not enough info to verify
+                continue
+
+            # Search Crossref
+            result = self.crossref.verify_textual_citation(
+                author=author, year=year, title_snippet=title_clean[:80]
+            )
+            if not result["verified"]:
+                report.findings.append(HallucinationFinding(
+                    hal_type="Fabrication", sub_type="fake_bibliography_entry",
+                    claim=f"BibTeX key: {bib_key}\nAuthor: {author}, Year: {year}\nTitle: {title_clean[:100]}",
+                    explanation=f"No Crossref match for '{author}' ({year}) – confidence {result['confidence']}",
+                    section="Bibliography",
+                    evidence=f"Entry: {bib_key}\nFields: {fields}",
+                    confidence=result["confidence"],
+                    severity="High" if result["confidence"] < 0.3 else "Medium"
+                ))
+                report.fabricated_bib_entries.append(f"{bib_key} ({author}, {year})")
 
     # ------------------------------------------------------------------
     # LLM verification (unchanged)
