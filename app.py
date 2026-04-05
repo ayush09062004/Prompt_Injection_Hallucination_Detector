@@ -1,7 +1,7 @@
 """
 app.py — LaTeX Security Detector
 Streamlit UI for detecting prompt injection and hallucination in LaTeX research papers.
-Updated to match generator's UI style, remove heatmap, and improve fake citation detection.
+Now with optional Crossref API citation verification.
 """
 
 import sys
@@ -23,6 +23,7 @@ from ingestion.ingestor import LaTeXIngestor
 from latex_parser.parser import LaTeXParser
 from injection_detector.detector import InjectionDetector
 from hallucination_detector.detector import HallucinationDetector
+from hallucination_detector.crossref_client import CrossrefClient
 from prompt_armor.sanitizer import PromptArmor
 from scoring_engine.scorer import ScoringEngine
 from report_generator.generator import ReportGenerator
@@ -37,7 +38,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Custom CSS (matching generator's style) ──────────────────────────────────
+# ── Custom CSS (matches generator's style) ──────────────────────────────────
 st.markdown("""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
@@ -110,6 +111,7 @@ def run_analysis(
     groq_model: str,
     use_llm: bool,
     aggressive_sanitize: bool,
+    use_crossref: bool,
 ) -> dict:
     """Full analysis pipeline. Returns complete report dict."""
     progress = st.progress(0, text="📦 Extracting ZIP archive...")
@@ -148,8 +150,23 @@ def run_analysis(
         include_chain=doc.include_chain,
     )
 
-    progress.progress(65, text="🧠 Running hallucination detector...")
-    hal_detector = HallucinationDetector(groq_client=groq_client if use_llm else None)
+    progress.progress(50, text="🧠 Initializing hallucination detector...")
+
+    # Optional Crossref client
+    crossref_client = None
+    if use_crossref:
+        try:
+            crossref_client = CrossrefClient()
+            progress.progress(55, text="🌐 Verifying citations with Crossref API (may take a while)...")
+        except Exception as e:
+            st.warning(f"Could not initialize Crossref client: {e}. Crossref verification disabled.")
+
+    hal_detector = HallucinationDetector(
+        groq_client=groq_client if use_llm else None,
+        crossref_client=crossref_client
+    )
+
+    # Run hallucination detection (includes Crossref verification if enabled)
     hallucination_report = hal_detector.detect(
         sections=parsed.sections,
         bib_entries=parsed.bib_entries,
@@ -220,15 +237,20 @@ def render_sidebar():
         st.markdown('<div class="section-label">⚙️ Settings</div>', unsafe_allow_html=True)
         groq_model = st.selectbox(
             "Groq Model",
-            ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "meta-llama/llama-prompt-guard-2-22m","meta-llama/llama-prompt-guard-2-86m","openai/gpt-oss-safeguard-20b","openai/gpt-oss-20b","openai/gpt-oss-120b"],
+            ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
             index=0,
         )
         use_llm = st.toggle("Enable LLM Analysis", value=True, help="Uses Groq API for deep detection")
         aggressive_sanitize = st.toggle("Aggressive Sanitization", value=False,
                                         help="Also strips contextual bias phrases")
+        use_crossref = st.toggle(
+            "🌐 Verify citations with Crossref API",
+            value=False,
+            help="Checks each reference against Crossref (slower, requires internet)."
+        )
         st.markdown("---")
         st.caption("Built with ❤️ using Groq + Streamlit")
-    return keys, groq_model, use_llm, aggressive_sanitize
+    return keys, groq_model, use_llm, aggressive_sanitize, use_crossref
 
 
 def render_risk_overview(report: dict):
@@ -335,7 +357,7 @@ def render_injection_tab(report: dict):
 
 
 def render_hallucination_tab(report: dict):
-    """Render hallucination detection findings, including enhanced fake citation check."""
+    """Render hallucination detection findings."""
     hal_data = report.get("hallucination_report", {})
     total = hal_data.get("total_findings", 0)
     st.subheader(f"🧠 Hallucination — {total} Finding(s)")
@@ -447,7 +469,7 @@ def render_report_tab(report: dict, report_gen: ReportGenerator):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def main():
-    api_keys, groq_model, use_llm, aggressive_sanitize = render_sidebar()
+    api_keys, groq_model, use_llm, aggressive_sanitize, use_crossref = render_sidebar()
 
     st.markdown('<div class="hero-title">🛡️ LaTeX Security Detector</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-sub">Detect prompt injection and hallucination in LaTeX research papers.</div>', unsafe_allow_html=True)
@@ -481,7 +503,7 @@ def main():
             tmp_path = tmp.name
         try:
             with st.spinner("Analyzing..."):
-                report = run_analysis(tmp_path, api_keys, groq_model, use_llm, aggressive_sanitize)
+                report = run_analysis(tmp_path, api_keys, groq_model, use_llm, aggressive_sanitize, use_crossref)
             if not report:
                 st.error("Analysis failed — check ZIP contents.")
                 return
