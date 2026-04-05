@@ -1,11 +1,11 @@
-# 🛡️ LaTeX Security Detector
+# Document Examination for Exploited Prompts and Semantic Inconsistencies(DEEPSI)
 
 Detects **prompt injection** and **hallucination** in LaTeX research papers (ZIP input).  
 Built as the defensive counterpart to the `SyntheticResearchPaper` generator.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 pip install -r requirements.txt
@@ -16,7 +16,7 @@ Then open http://localhost:8501 in your browser.
 
 ---
 
-## 🧩 Architecture
+## Architecture
 
 ```
 latex_detector/
@@ -33,7 +33,7 @@ latex_detector/
 
 ---
 
-## 🔐 Injection Detection Taxonomy
+## Injection Detection Taxonomy
 
 | Dimension | Values |
 |-----------|--------|
@@ -54,7 +54,7 @@ latex_detector/
 
 ---
 
-## 🧠 Hallucination Detection Taxonomy
+## Hallucination Detection Taxonomy
 
 | Type | Sub-types |
 |------|-----------|
@@ -74,7 +74,7 @@ latex_detector/
 
 ---
 
-## 🛡️ Prompt Armor
+## Prompt Armor
 
 Before sending any content to an LLM, the sanitizer:
 1. **Strips** explicit injection comments and chained markers
@@ -90,7 +90,7 @@ Before sending any content to an LLM, the sanitizer:
 
 ---
 
-## 📊 Scoring
+## Scoring
 
 ### Injection Score (0–100):
 ```
@@ -120,7 +120,7 @@ score = min(100, raw_points / 40 × 100)
 
 ---
 
-## 🔑 Groq API Keys
+## Groq API Keys
 
 - Enter up to 4 API keys in the sidebar
 - Keys are rotated round-robin across API calls
@@ -132,7 +132,7 @@ Get a free key at: https://console.groq.com
 
 ---
 
-## 📤 Outputs
+## Outputs
 
 - **Interactive UI** with gauges, charts, expandable findings
 - **Section Risk Heatmap** showing which sections are most suspicious
@@ -144,5 +144,5 @@ Get a free key at: https://console.groq.com
 
 ## 📎 Reference Paper
 
-This tool is informed by prompt injection defense research.  
+This tool is inspired by PromptArmor Research.  
 See: https://arxiv.org/pdf/2507.15219
