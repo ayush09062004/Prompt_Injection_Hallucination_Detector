@@ -220,7 +220,7 @@ def render_sidebar():
         st.markdown('<div class="section-label">⚙️ Settings</div>', unsafe_allow_html=True)
         groq_model = st.selectbox(
             "Groq Model",
-            ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
+            ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "meta-llama/llama-prompt-guard-2-22m","meta-llama/llama-prompt-guard-2-86m","openai/gpt-oss-safeguard-20b","openai/gpt-oss-20b","openai/gpt-oss-120b"],
             index=0,
         )
         use_llm = st.toggle("Enable LLM Analysis", value=True, help="Uses Groq API for deep detection")
