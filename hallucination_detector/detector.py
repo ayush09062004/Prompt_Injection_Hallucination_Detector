@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .crossref_client import CrossrefClient  # make sure crossref_client.py is in the same folder
+from .crossref_client import CrossrefClient  # Ensure crossref_client.py is in the same folder
 
 
 @dataclass
@@ -47,13 +47,17 @@ class HallucinationDetector:
         r'\+?(\d+(?:\.\d+)?)\s*(?:%|percentage\s+points?)',
         re.IGNORECASE
     )
-    # Textual citation patterns (author et al. year)
+
+    # Fixed regex for textual citations: matches patterns like:
+    # "Chen et al. (2024)", "Smith and Jones (2023)", "Wang (2022)"
     TEXTUAL_CITATION_RE = re.compile(
-        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:et\s+al\.|and\s+[A-Z][a-z]+)\s*\((\d{4})\)|'
+        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:et\s+al\.|and\s+[A-Z][a-z]+)\s*\((\d{4})\)|'
         r'([A-Z][a-z]+)\s+et\s+al\.\s*\((\d{4})\)|'
-        r'([A-Z][a-z]+)\s+and\s+([A-Z][a-z]+)\s*\((\d{4})\)',
+        r'([A-Z][a-z]+)\s+and\s+([A-Z][a-z]+)\s*\((\d{4})\)|'
+        r'([A-Z][a-z]+)\s*\((\d{4})\)',
         re.IGNORECASE
     )
+
     OVERGENERALIZATION_RE = re.compile(
         r'\b(?:always|never|all|every|none|no\s+one|everyone|universally|'
         r'definitively|conclusively|proven|guaranteed|invariably|'
@@ -179,17 +183,25 @@ class HallucinationDetector:
         for section in sections:
             plain = self._strip_latex(section.content)
             for m in self.TEXTUAL_CITATION_RE.finditer(plain):
-                # Extract author and year
+                # Extract author and year using capture groups
                 groups = m.groups()
-                if groups[0] is not None:        # "Smith et al. (2024)" or "Smith and Jones (2024)"
-                    author_part = groups[0].strip()
+                author = None
+                year = None
+                # Try different group patterns
+                if groups[0] and groups[1]:   # "Chen et al. (2024)" or "Smith and Jones (2024)"
+                    author = groups[0].strip()
                     year = groups[1]
-                elif groups[2] is not None:      # "Smith et al. (2024)" alternative
-                    author_part = groups[2].strip()
+                elif groups[2] and groups[3]: # "Smith et al. (2024)" alternative
+                    author = groups[2].strip()
                     year = groups[3]
-                else:                            # "Smith and Jones (2024)"
-                    author_part = f"{groups[4]} and {groups[5]}"
+                elif groups[4] and groups[5] and groups[6]: # "Smith and Jones (2024)"
+                    author = f"{groups[4]} and {groups[5]}"
                     year = groups[6]
+                elif groups[7] and groups[8]: # "Wang (2022)"
+                    author = groups[7].strip()
+                    year = groups[8]
+                else:
+                    continue
 
                 # Extract title snippet (next 5-10 words after the citation)
                 start = m.end()
@@ -197,13 +209,13 @@ class HallucinationDetector:
                 title_snippet = plain[start:end].strip().split('.')[0][:80]
 
                 result = self.crossref.verify_textual_citation(
-                    author=author_part, year=year, title_snippet=title_snippet
+                    author=author, year=year, title_snippet=title_snippet
                 )
                 if not result["verified"]:
                     report.findings.append(HallucinationFinding(
                         hal_type="Fabrication", sub_type="fake_citation",
                         claim=m.group(0),
-                        explanation=f"No Crossref match for '{author_part}' ({year}) – confidence {result['confidence']}",
+                        explanation=f"No Crossref match for '{author}' ({year}) – confidence {result['confidence']}",
                         section=section.title,
                         evidence=plain[max(0,m.start()-80):m.end()+80],
                         confidence=result["confidence"],
