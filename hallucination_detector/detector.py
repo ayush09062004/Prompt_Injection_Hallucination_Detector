@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .crossref_client import CrossrefClient  # adjust if placed elsewhere
+from .crossref_client import CrossrefClient  # make sure crossref_client.py is in the same folder
 
 
 @dataclass
