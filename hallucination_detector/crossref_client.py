@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class CrossrefClient:
     BASE_URL = "https://api.crossref.org"
-    DEFAULT_USER_AGENT = "AGENT/1.0 (mailto:aidenraj01012004@gmail.com)"  # CHANGE THIS
+    DEFAULT_USER_AGENT = "DEEPSI/1.0 (mailto:aidenraj01012004@gmail.com)"  # Replace with your email
 
     def __init__(self, rate_limit_wait: float = 0.2, user_agent: Optional[str] = None):
         self.rate_limit_wait = rate_limit_wait
@@ -42,17 +42,22 @@ class CrossrefClient:
 
                 if response.status_code == 200:
                     return response.json()
-
                 elif response.status_code == 404:
                     return None
-
+                elif response.status_code == 429:
+                    # Rate limited – wait longer
+                    wait = 2 ** (attempt + 1)
+                    logger.warning(f"Rate limited (429). Waiting {wait}s...")
+                    time.sleep(wait)
+                    continue
                 else:
                     logger.warning(f"Crossref API error {response.status_code}: {response.text[:200]}")
+                    # For other errors, wait a bit and retry
+                    time.sleep(2 ** attempt)
 
             except requests.exceptions.RequestException as e:
                 logger.warning(f"Request failed (attempt {attempt+1}): {e}")
-
-            time.sleep(2 ** attempt)  # exponential backoff
+                time.sleep(2 ** attempt)
 
         return None
 
@@ -63,13 +68,28 @@ class CrossrefClient:
         return self._request_with_retry(url, headers, params)
 
     def _clean_doi(self, doi: str) -> Optional[str]:
-        doi_clean = re.sub(r'^https?://doi\.org/', '', doi).strip()
-        if re.match(r'^10\.\d{4,9}/', doi_clean):
+        # Remove any URL prefix
+        doi_clean = re.sub(r'^https?://(dx\.)?doi\.org/', '', doi).strip()
+        # Basic DOI pattern: 10.<4 or more digits>/<anything>
+        if re.match(r'^10\.\d{4,}/', doi_clean):
             return doi_clean
         return None
 
     def _similarity(self, a: str, b: str) -> float:
         return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+    def _extract_primary_author(self, author_str: str) -> str:
+        """
+        Extract the primary author's last name from strings like:
+        "Chen et al.", "Smith and Jones", "Wang"
+        """
+        # Remove "et al." and everything after it
+        if "et al." in author_str.lower():
+            author_str = author_str.split("et al.")[0].strip()
+        # If there is "and", take the first author
+        if " and " in author_str:
+            author_str = author_str.split(" and ")[0].strip()
+        return author_str
 
     # -----------------------------
     # Core API Methods
@@ -85,7 +105,6 @@ class CrossrefClient:
 
         if data and data.get("status") == "ok":
             return data.get("message")
-
         return None
 
     @lru_cache(maxsize=1000)
@@ -96,12 +115,9 @@ class CrossrefClient:
             "sort": "relevance",
             "order": "desc",
         }
-
         data = self._get("works", params=params)
-
         if data and data.get("status") == "ok":
             return data["message"]["items"]
-
         return []
 
     # -----------------------------
@@ -116,8 +132,13 @@ class CrossrefClient:
         """
         Returns structured verification result with confidence score.
         """
+        # Clean author: extract primary last name
+        primary_author = self._extract_primary_author(author)
 
-        query = f"{author} {year} {title_snippet}".strip()
+        # Build query
+        query = f"{primary_author} {year}"
+        if title_snippet:
+            query += f" {title_snippet}"
         matches = self.search_bibliographic(query)
 
         best_match = None
@@ -126,35 +147,27 @@ class CrossrefClient:
         for m in matches:
             score = 0
 
-            # ------------------
             # Year match
-            # ------------------
             pub_year = None
             if "issued" in m and "date-parts" in m["issued"]:
                 parts = m["issued"]["date-parts"]
                 if parts and parts[0]:
                     pub_year = parts[0][0]
-
             if pub_year and str(pub_year) == year:
                 score += 0.4
 
-            # ------------------
-            # Author match
-            # ------------------
-            if "author" in m:
-                authors = [a.get("family", "").lower() for a in m["author"]]
-                if author.lower() in authors:
+            # Author match (check if primary author appears in author list)
+            if "author" in m and m["author"]:
+                authors = [a.get("family", "").lower() for a in m["author"] if a.get("family")]
+                if primary_author.lower() in authors:
                     score += 0.3
 
-            # ------------------
             # Title similarity
-            # ------------------
             if title_snippet and "title" in m and m["title"]:
                 title = m["title"][0]
                 sim = self._similarity(title_snippet, title)
                 score += 0.3 * sim
 
-            # Track best match
             if score > best_score:
                 best_score = score
                 best_match = m
