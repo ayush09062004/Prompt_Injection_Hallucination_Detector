@@ -32,7 +32,7 @@ from groq_client.client import GroqClientManager
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="LaTeX Security Detector",
+    page_title="Prompt Injection & Hallucination Detector",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
