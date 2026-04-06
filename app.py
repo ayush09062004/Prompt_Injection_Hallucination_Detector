@@ -222,7 +222,7 @@ def run_analysis(
 def render_sidebar():
     """Render sidebar with configuration (matches generator's style)."""
     with st.sidebar:
-        st.markdown('<div class="section-label">🛡️ LaTeX Detector</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">🛡️ Prompt Injection & Hallucination Detector</div>', unsafe_allow_html=True)
         st.markdown("---")
 
         st.markdown('<div class="section-label">🔑 Groq API Keys</div>', unsafe_allow_html=True)
@@ -491,7 +491,7 @@ def render_report_tab(report: dict, report_gen: ReportGenerator):
 def main():
     api_keys, groq_model, use_llm, aggressive_sanitize, use_crossref = render_sidebar()
 
-    st.markdown('<div class="hero-title">🛡️ LaTeX Security Detector</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">🛡️ Prompt Injection & Hallucination Detector</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-sub">Detect prompt injection and hallucination in LaTeX research papers.</div>', unsafe_allow_html=True)
 
     uploaded_file = st.file_uploader("📁 Upload LaTeX ZIP Archive", type=["zip"],
