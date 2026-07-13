@@ -1,4 +1,4 @@
-# Document Examination for Exploited Prompts and Semantic Inconsistencies(DEEPSI)
+# DEEPSEE: A Framework for Secure Analysis of Scientific Documents Against Prompt Injection and Hallucinations
 
 Detects **prompt injection** and **hallucination** in LaTeX research papers (ZIP input).  
 Built as the defensive counterpart to the `SyntheticResearchPaper` generator.
