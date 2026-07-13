@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class CrossrefClient:
     BASE_URL = "https://api.crossref.org"
-    DEFAULT_USER_AGENT = "DEEPSI/1.0 (mailto:aidenraj01012004@gmail.com)"  # Replace with your email
+    DEFAULT_USER_AGENT = "DEEPSEE/1.0 (mailto:abc@gmail.com)"  
 
     def __init__(self, rate_limit_wait: float = 0.2, user_agent: Optional[str] = None):
         self.rate_limit_wait = rate_limit_wait
