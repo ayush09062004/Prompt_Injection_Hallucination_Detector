@@ -268,5 +268,5 @@ If you use DEEPSEE or the companion synthetic generator in your work, please cit
 MIT
 
 ---
-
+## Companion Repository
 🔗 [`SyntheticResearchPaper`](https://github.com/ayush09062004/SyntheticResearchPaper) — generates LaTeX papers with controllable, LLM-authored, ground-truth-labeled injection and hallucination payloads, used to build and regression-test DEEPSEE.
